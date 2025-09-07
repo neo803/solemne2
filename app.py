@@ -326,7 +326,7 @@ with st.sidebar:
     st.header("Filtros")
     # Full region list
     region_sel = st.selectbox("Región", ["(todas)"] + REGIONES_CL, index=0)
-    min_mag = st.slider("Magnitud mínima", 0.0, 10.0, 3.0, 0.1)
+    mag_choice = st.radio("Magnitud mínima", ["Todas", "≥ 3", "≥ 6"], index=0)
     if col_time and pd.api.types.is_datetime64_any_dtype(df[col_time]):
         tmin, tmax = df[col_time].min(), df[col_time].max()
         date_range = st.date_input("Rango de fechas", value=(tmin.date(), tmax.date()))
@@ -335,48 +335,26 @@ with st.sidebar:
     text_ref = st.text_input("Texto a buscar en referencia (opcional)", "")
     st.header("Opciones de mapa")
     color_by = st.selectbox("Color por", ["profundidad", "magnitud"])
-    radius_base = st.slider("Radio base (px ~ escala)", 1000, 80000, 15000, 1000)
-    st.caption("También puedes seleccionar la región clicando en el mapa de polígonos más abajo.")
-    apply_btn = st.button("Aplicar filtros")
-
-# -----------------------------
-# Region picker map (folium)
-# -----------------------------
-st.subheader("Selector de región en mapa")
-selected_region_click = None
-geo = get_chile_regions_geojson()
-if geo:
-    m = folium.Map(location=[-33.5, -70.6], zoom_start=4, tiles="CartoDB positron")
-    gj = folium.GeoJson(
-        geo,
-        name="Regiones",
-        style_function=lambda f: {"fillColor": "#74add1", "color": "#2c7fb8", "weight": 1, "fillOpacity": 0.2},
-        highlight_function=lambda f: {"weight": 3, "fillOpacity": 0.6},
-        tooltip=folium.GeoJsonTooltip(fields=["name"], aliases=["Región"])
-    )
-    gj.add_to(m)
-    out = st_folium(m, height=420, use_container_width=True, returned_objects=["last_object_clicked"])
-    if out and out.get("last_object_clicked"):
-        props = out["last_object_clicked"].get("properties", {})
-        name_en = props.get("name") or props.get("NAME_1")
-        selected_region_click = en_to_es_region(name_en)
-        if selected_region_click:
-            st.success(f"Región seleccionada en el mapa: {selected_region_click}")
-else:
-    st.info("No fue posible cargar el GeoJSON de regiones. Usa el selector de la barra lateral.")
+    radius_base = st.slider("Radio base (px ~ escala)", 500, 10000, 2500, 500)
+        apply_btn = st.button("Aplicar filtros")
 
 # -----------------------------
 # Apply filters
 # -----------------------------
+min_mag_value = None
+if 'mag_choice' in locals():
+    if mag_choice == '≥ 3':
+        min_mag_value = 3.0
+    elif mag_choice == '≥ 6':
+        min_mag_value = 6.0
+
 chosen_region = selected_region_click if selected_region_click else (region_sel if region_sel != "(todas)" else None)
 
-if col_mag is not None:
-    df = df[df[col_mag] >= min_mag]
+if col_mag is not None and min_mag_value is not None:
+    df = df[df[col_mag] >= min_mag_value]
 if date_range and isinstance(date_range, tuple) and len(date_range) == 2 and col_time:
     start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     df = df[(df[col_time] >= start) & (df[col_time] <= end)]
-if text_ref and col_ref:
-    df = df[df[col_ref].astype(str).str.contains(text_ref, case=False, na=False)]
 if chosen_region:
     if "region_calculada" in df.columns:
         df = df[df["region_calculada"] == chosen_region]
@@ -386,7 +364,7 @@ if chosen_region:
 # -----------------------------
 # Shareable link & CSV
 # -----------------------------
-params = {"min_mag": min_mag, "region": chosen_region or "", "text": text_ref or "", "color": color_by, "radius": radius_base}
+params = {"mag": (mag_choice if "mag_choice" in locals() else "Todas"), "region": chosen_region or "", "color": color_by, "radius": radius_base}
 try:
     st.query_params.update(params)
 except Exception:
@@ -476,9 +454,9 @@ if lat_used and lon_used:
 
     map_df["_color_r"], map_df["_color_g"], map_df["_color_b"], map_df["_color_a"] = colors[:,0], colors[:,1], colors[:,2], colors[:,3]
     if "magnitud" in map_df.columns and not map_df["magnitud"].dropna().empty:
-        map_df["_radius"] = (map_df["magnitud"].fillna(3.0) * radius_base).clip(radius_base*0.2, radius_base*4)
+        map_df["_radius"] = (map_df["magnitud"].fillna(3.0) * radius_base * 0.5).clip(400, 6000)
     else:
-        map_df["_radius"] = np.full(len(map_df), radius_base)
+        map_df["_radius"] = np.full(len(map_df), max(400, int(radius_base * 0.6)))
 
     layer = pdk.Layer("ScatterplotLayer", data=map_df, get_position="[lon, lat]", get_color="[_color_r,_color_g,_color_b,_color_a]", get_radius="_radius", pickable=True, auto_highlight=True)
     view_state = pdk.ViewState(latitude=-33.45, longitude=-70.66, zoom=3.8, pitch=0)
