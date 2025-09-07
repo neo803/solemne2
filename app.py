@@ -340,7 +340,7 @@ if geo:
         tooltip=folium.GeoJsonTooltip(fields=["name"], aliases=["Región"])
     )
     gj.add_to(m)
-    out = st_folium(m, height=420, use_container_width=True, returned_objects=["last_object_clicked")
+    out = st_folium(m, height=420, use_container_width=True, returned_objects=["last_object_clicked"])
     if out and out.get("last_object_clicked"):
         props = out["last_object_clicked"].get("properties", {})
         name_en = props.get("name") or props.get("NAME_1")
