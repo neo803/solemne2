@@ -4,3 +4,5 @@ matplotlib
 streamlit
 pydeck
 numpy
+folium
+streamlit-folium
