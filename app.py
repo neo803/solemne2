@@ -2,26 +2,12 @@
 import json
 import streamlit as st
 import pandas as pd
-from api_utils import search_datasets, dataset_resources, fetch_resource_to_df, best_time_column, numeric_columns
+from api_utils import search_datasets, dataset_resources, fetch_resource_to_df, best_time_column, numeric_columns, fetch_mindicador, fetch_sismos_chile, fetch_openweather_current
 from analysis import clean_dataframe, summarize
 from visuals import plot_timeseries, plot_histogram
 
 st.set_page_config(page_title="Clima Chile - DataViz con APIs (datos.gob.cl)", layout="wide")
 
-st.title("Clima Chile – Análisis y Visualización desde APIs públicas (datos.gob.cl)")
-st.markdown("""
-Esta aplicación permite **explorar datasets del grupo *Clima* de datos.gob.cl**, seleccionar un recurso y **analizar/visualizar** los datos.
-- Fuente: API CKAN `package_search` y `datastore_search` de datos.gob.cl.
-- Librerías: `requests`, `json`, `pandas`, `matplotlib`, `streamlit`.
-""")
-
-
-with st.sidebar:
-    st.header("Búsqueda")
-    group = st.selectbox("Categoría (grupo CKAN)", ["medio_ambiente", "economia", "educacion", "salud", "transporte", "seguridad", "agricultura", "ciencia", "cultura", "gobierno", "justicia", "territorio", "energia", "turismo", "tecnologia", "general"], index=0)
-    q = st.text_input("Filtrar por palabra clave (opcional)", value="")
-    rows = st.slider("Cantidad de datasets a listar", 5, 50, 15, step=5)
-    st.caption("Tip: prueba con *temperatura*, *precipitaciones*, *meteorología*, *clima*.")
     run = st.button("Buscar")
 
 if run or "datasets_cache" not in st.session_state:
