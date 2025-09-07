@@ -1,169 +1,149 @@
 import streamlit as st
 import pandas as pd
-from api_utils import (
-    search_datasets, dataset_resources, fetch_resource_to_df,
-    best_time_column, numeric_columns,
-    fetch_mindicador, fetch_sismos_chile, fetch_openweather_current
+from api_utils import fetch_sismos_chile
+
+st.set_page_config(page_title="Sismos Chile – Magnitud, Profundidad y Mapa", layout="wide")
+st.title("🌎 Sismos en Chile – Magnitud, Profundidad y Mapa")
+
+st.markdown(
+    "Datos en tiempo real desde **GAEL Cloud**. Filtra por magnitud y fechas, "
+    "y visualiza un mapa con la ubicación de los eventos."
 )
-from analysis import summarize
-from visuals import plot_timeseries, plot_histogram
 
-# Configuración de la página
-st.set_page_config(page_title="Clima Chile - DataViz", layout="wide")
+@st.cache_data(ttl=300)
+def load_sismos():
+    df = fetch_sismos_chile()
+    # Normalización de nombres para facilitar el manejo
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
 
-st.title("Clima Chile – Análisis y Visualización desde APIs públicas")
+def find_col(df, candidates):
+    cols_lower = {c.lower(): c for c in df.columns}
+    for cand in candidates:
+        key = cand.lower()
+        if key in cols_lower:
+            return cols_lower[key]
+    # búsqueda parcial
+    for c in df.columns:
+        lc = c.lower()
+        if any(key in lc for key in [cand.lower() for cand in candidates]):
+            return c
+    return None
 
-# Tabs principales
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🔎 Explorador (datos.gob.cl)",
-    "📈 Mindicador",
-    "🌎 Sismos Chile",
-    "☁️ OpenWeather"
-])
+def coerce_numeric(series):
+    return pd.to_numeric(series, errors="coerce")
 
-# -------------------------------
-# Tab 1 – Explorador CKAN
-# -------------------------------
-with tab1:
-    st.markdown("Explora datasets por **categoría** (grupo CKAN) y recursos compatibles (Datastore/CSV).")
+def coerce_datetime(series):
+    return pd.to_datetime(series, errors="coerce")
 
-    with st.sidebar:
-        st.header("Búsqueda (CKAN)")
-        group = st.selectbox(
-            "Categoría (grupo CKAN)",
-            [
-                "medio_ambiente", "economia", "educacion", "salud",
-                "transporte", "agricultura", "ciencia", "cultura",
-                "gobierno", "territorio", "energia", "tecnologia", "general"
-            ],
-            index=0
-        )
-        q = st.text_input("Filtrar por palabra clave (opcional)", value="")
-        rows = st.slider("Cantidad de datasets a listar", 5, 50, 15, step=5)
-        run = st.button("Buscar datasets")
+df = load_sismos()
+if df.empty:
+    st.error("No se pudieron cargar los datos de sismos.")
+    st.stop()
 
-    if run or "datasets_cache" not in st.session_state:
-        try:
-            datasets = search_datasets(q=q or None, group=group, rows=rows)
-            st.session_state["datasets_cache"] = datasets
-        except Exception as e:
-            st.error(f"Error al consultar la API CKAN: {e}")
-            datasets = []
+# Intentar detectar columnas relevantes (caso-insensible y tolerante a variaciones)
+col_mag = find_col(df, ["Magnitud", "mag", "magnitude"])
+col_prof = find_col(df, ["Profundidad", "depth", "prof"])
+col_lat = find_col(df, ["Latitud", "lat", "latitude"])
+col_lon = find_col(df, ["Longitud", "lon", "lng", "longitude"])
+col_time = find_col(df, ["Fecha", "fecha", "time", "fechaLocal", "Fecha UTC", "TimeStamp"])
+col_ref = find_col(df, ["Referencia Geografica", "Referencia", "refgeo", "lugar", "place"])
 
-    datasets = st.session_state.get("datasets_cache", [])
-    if not datasets:
-        st.warning("No se encontraron datasets para esos filtros.")
+# Coerciones
+if col_mag:
+    df[col_mag] = coerce_numeric(df[col_mag])
+if col_prof:
+    # A veces viene con 'km' como string
+    df[col_prof] = df[col_prof].astype(str).str.extract(r"([\d\.,]+)", expand=False).str.replace(",", ".", regex=False)
+    df[col_prof] = coerce_numeric(df[col_prof])
+if col_lat:
+    df[col_lat] = coerce_numeric(df[col_lat])
+if col_lon:
+    df[col_lon] = coerce_numeric(df[col_lon])
+if col_time:
+    df[col_time] = coerce_datetime(df[col_time])
+
+# Sidebar de filtros
+with st.sidebar:
+    st.header("Filtros")
+    min_mag = st.slider("Magnitud mínima", 0.0, 10.0, 3.0, 0.1)
+    if col_time and pd.api.types.is_datetime64_any_dtype(df[col_time]):
+        tmin, tmax = df[col_time].min(), df[col_time].max()
+        if pd.isna(tmin) or pd.isna(tmax):
+            date_range = None
+        else:
+            date_range = st.date_input("Rango de fechas", value=(tmin.date(), tmax.date()))
     else:
-        ds_titles = [f"{i+1}. {d.get('title', 'Sin título')}" for i, d in enumerate(datasets)]
-        ds_idx = st.selectbox("Dataset:", range(len(ds_titles)), format_func=lambda i: ds_titles[i])
-        ds = datasets[ds_idx]
-        st.subheader(ds.get("title", "Sin título"))
-        st.write(ds.get("notes", ""))
+        date_range = None
+    apply_btn = st.button("Aplicar filtros")
 
-        res_list = dataset_resources(ds)
-        filtered = []
-        for r in res_list:
-            fmt = (r.get("format") or "").lower()
-            if fmt in ["csv", "json"] or r.get("id"):
-                filtered.append(r)
+if apply_btn:
+    if col_mag:
+        df = df[df[col_mag] >= min_mag]
+    if date_range and isinstance(date_range, tuple) and len(date_range) == 2 and col_time:
+        start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        df = df[(df[col_time] >= start) & (df[col_time] <= end)]
 
-        if not filtered:
-            st.info("El dataset no tiene recursos CSV/JSON/Datastore parseables.")
-        else:
-            res_labels = [f"{r.get('name') or r.get('id')}  •  formato: {r.get('format')}" for r in filtered]
-            res_idx = st.selectbox("Recurso:", range(len(filtered)), format_func=lambda i: res_labels[i])
-            resource = filtered[res_idx]
+# Vista general
+st.subheader("Tabla de sismos")
+cols_show = []
+for c in [col_time, col_ref, col_mag, col_prof, col_lat, col_lon]:
+    if c and c not in cols_show:
+        cols_show.append(c)
 
-            try:
-                df, source_desc = fetch_resource_to_df(resource, limit=10000)
-                st.success(f"Cargado desde {source_desc}. {len(df):,} filas × {len(df.columns)} cols")
-                st.dataframe(df.head(100))
+if cols_show:
+    st.dataframe(df[cols_show].rename(columns={
+        col_time or "": "Fecha/Hora",
+        col_ref or "": "Referencia",
+        col_mag or "": "Magnitud",
+        col_prof or "": "Profundidad (km)",
+        col_lat or "": "Lat",
+        col_lon or "": "Lon",
+    }), use_container_width=True)
+else:
+    st.dataframe(df.head(50), use_container_width=True)
 
-                time_col_default = best_time_column(df)
-                num_cols = numeric_columns(df)
+# KPIs rápidos
+k1, k2, k3 = st.columns(3)
+with k1:
+    st.metric("Total de sismos", f"{len(df):,}")
+with k2:
+    st.metric("Magnitud máx.", f"{df[col_mag].max():.1f}" if col_mag and not df[col_mag].dropna().empty else "N/D")
+with k3:
+    st.metric("Profundidad media", f"{df[col_prof].mean():.1f} km" if col_prof and not df[col_prof].dropna().empty else "N/D")
 
-                left, right = st.columns(2)
-                with left:
-                    time_col = st.selectbox(
-                        "Columna fecha/hora (opcional)",
-                        ["(ninguna)"] + list(df.columns),
-                        index=(list(df.columns).index(time_col_default)+1 if time_col_default in df.columns else 0)
-                    )
-                with right:
-                    value_col = st.selectbox("Columna numérica (opcional)", ["(ninguna)"] + num_cols, index=0)
+# Gráficos
+if col_mag:
+    st.subheader("Distribución de magnitudes")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.hist(df[col_mag].dropna(), bins=25)
+    ax.set_xlabel("Magnitud")
+    ax.set_ylabel("Frecuencia")
+    ax.set_title("Histograma de magnitudes")
+    st.pyplot(fig)
 
-                st.subheader("Resumen estadístico")
-                st.dataframe(summarize(df))
-
-                st.subheader("Visualizaciones")
-                if time_col != "(ninguna)" and value_col != "(ninguna)":
-                    df_plot = df.copy()
-                    df_plot[time_col] = pd.to_datetime(df_plot[time_col], errors="coerce")
-                    if pd.api.types.is_datetime64_any_dtype(df_plot[time_col]) and pd.api.types.is_numeric_dtype(df_plot[value_col]):
-                        fig = plot_timeseries(df_plot.dropna(subset=[time_col, value_col]), time_col, value_col)
-                        st.pyplot(fig)
-
-                if num_cols:
-                    st.markdown("**Histogramas**")
-                    for col in num_cols[:4]:
-                        fig = plot_histogram(df, col)
-                        st.pyplot(fig)
-            except Exception as e:
-                st.error(f"No fue posible leer el recurso: {e}")
-
-# -------------------------------
-# Tab 2 – Mindicador
-# -------------------------------
-with tab2:
-    st.markdown("Serie histórica de **mindicador.cl** (ej.: `uf`, `dolar`, `euro`, `ipc`).")
-    c1, c2 = st.columns(2)
-    with c1:
-        indicador = st.text_input("Indicador", value="dolar")
-    with c2:
-        year = st.text_input("Año", value="2024")
-    if st.button("Consultar Mindicador"):
-        try:
-            df = fetch_mindicador(indicador, year)
-            if df.empty:
-                st.warning("Sin datos para ese indicador/año.")
-            else:
-                st.dataframe(df.tail(20))
-                fig = plot_timeseries(df, "fecha", "valor")
-                st.pyplot(fig)
-        except Exception as e:
-            st.error(f"Error al consultar mindicador: {e}")
-
-# -------------------------------
-# Tab 3 – Sismos Chile
-# -------------------------------
-with tab3:
-    st.markdown("Últimos **sismos en Chile** (GAEL Cloud).")
-    if st.button("Cargar sismos"):
-        try:
-            df = fetch_sismos_chile()
-            st.dataframe(df.head(50))
-            if "Magnitud" in df.columns:
-                fig = plot_histogram(df, "Magnitud")
-                st.pyplot(fig)
-        except Exception as e:
-            st.error(f"Error al consultar sismos: {e}")
-
-# -------------------------------
-# Tab 4 – OpenWeather
-# -------------------------------
-with tab4:
-    st.markdown("Clima **actual** por ciudad desde **OpenWeather** (requiere tu API key).")
-    c1, c2 = st.columns(2)
-    with c1:
-        city = st.text_input("Ciudad", value="Santiago")
-    with c2:
-        api_key = st.text_input("OpenWeather API key", type="password")
-    if st.button("Consultar OpenWeather"):
-        if not api_key:
-            st.warning("Ingresa tu API key de OpenWeather.")
-        else:
-            try:
-                df = fetch_openweather_current(city, api_key)
-                st.dataframe(df)
-            except Exception as e:
-                st.error(f"Error al consultar OpenWeather: {e}")
+# Mapa
+st.subheader("Mapa de sismos")
+if col_lat and col_lon:
+    map_df = df[[col_lat, col_lon] + ([col_mag] if col_mag else [])].dropna()
+    map_df = map_df.rename(columns={col_lat: "lat", col_lon: "lon", col_mag or "": "magnitud"})
+    st.map(map_df[["lat", "lon"]])
+    # Lista destacada
+    st.markdown("**Eventos destacados (top 10 por magnitud)**")
+    if "magnitud" in map_df.columns:
+        top = df.sort_values(col_mag, ascending=False).head(10)
+        show_cols = []
+        for c in [col_time, col_ref, col_mag, col_prof, col_lat, col_lon]:
+            if c and c not in show_cols:
+                show_cols.append(c)
+        st.dataframe(top[show_cols].rename(columns={
+            col_time or "": "Fecha/Hora",
+            col_ref or "": "Referencia",
+            col_mag or "": "Magnitud",
+            col_prof or "": "Profundidad (km)",
+            col_lat or "": "Lat",
+            col_lon or "": "Lon",
+        }), use_container_width=True)
+else:
+    st.info("Este dataset no incluye columnas de latitud/longitud reconocibles para mapa.")

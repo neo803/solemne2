@@ -32,3 +32,7 @@ Si el recurso no está en Datastore, intenta leer vía **CSV** por HTTP GET.
 - Se cumple con las librerías permitidas (requests, json, pandas, matplotlib, streamlit).
 - Se implementa **interactividad** (filtros, selección de dataset/recurso, rango de fechas, gráficos).
 - Se incluyen **entregables**: código + informe + póster.
+
+
+## Modo Sismos (solo)
+Este paquete ahora incluye una app Streamlit enfocada **exclusivamente** en sismos de Chile (GAEL Cloud), mostrando **magnitud**, **profundidad** y **mapa**.
