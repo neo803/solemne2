@@ -15,16 +15,18 @@ Esta aplicación permite **explorar datasets del grupo *Clima* de datos.gob.cl**
 - Librerías: `requests`, `json`, `pandas`, `matplotlib`, `streamlit`.
 """)
 
+
 with st.sidebar:
     st.header("Búsqueda")
-    q = st.text_input("Filtrar por palabra clave", value="temperatura")
+    group = st.selectbox("Categoría (grupo CKAN)", ["medio_ambiente", "economia", "educacion", "salud", "transporte", "seguridad", "agricultura", "ciencia", "cultura", "gobierno", "justicia", "territorio", "energia", "turismo", "tecnologia", "general"], index=0)
+    q = st.text_input("Filtrar por palabra clave (opcional)", value="")
     rows = st.slider("Cantidad de datasets a listar", 5, 50, 15, step=5)
-    st.caption("Tip: prueba con términos como *temperatura*, *precipitaciones*, *meteorología*, *clima*.")
+    st.caption("Tip: prueba con *temperatura*, *precipitaciones*, *meteorología*, *clima*.")
     run = st.button("Buscar")
 
 if run or "datasets_cache" not in st.session_state:
     try:
-        datasets = search_datasets(q=q, group="clima", rows=rows)
+        datasets = search_datasets(q=q or None, group=group, rows=rows)
         st.session_state["datasets_cache"] = datasets
     except Exception as e:
         st.error(f"Error al consultar la API: {e}")
