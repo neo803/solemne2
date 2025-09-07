@@ -23,6 +23,56 @@ def coerce_numeric(series):
 def coerce_datetime(series):
     return pd.to_datetime(series, errors="coerce")
 
+def normalize_txt(s: str) -> str:
+    if not isinstance(s, str):
+        return ""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    return s.lower()
+
+REGIONS = [
+    "Arica Y Parinacota","Tarapaca","Antofagasta","Atacama","Coquimbo","Valparaiso",
+    "Metropolitana","O'Higgins","Ohiggins","Maule","Nuble","Biobio","Araucania","Los Rios",
+    "Los Lagos","Aysen","Magallanes"
+]
+
+def detect_region_from_reference(text):
+    t = normalize_txt(text)
+    # direct match by name tokens
+    for r in REGIONS:
+        rn = normalize_txt(r)
+        if rn in t:
+            # unify names
+            pretty = r.replace("Ohiggins","O'Higgins").replace("Nuble","Ñuble").replace("Aysen","Aysén")
+            return f"Región {pretty}" if "metropolitana" not in rn else "Región Metropolitana"
+    return None
+
+def region_from_latlon(lat, lon):
+    # Very rough lat-based partition (Chile is long north-south); serves as fallback.
+    if lat is None or np.isnan(lat):
+        return None
+    try:
+        lat = float(lat)
+    except:
+        return None
+    # thresholds from north (-17) to south (-56)
+    if lat >= -20: return "Región Arica y Parinacota"
+    if lat >= -23: return "Región Tarapacá"
+    if lat >= -27: return "Región Antofagasta"
+    if lat >= -30: return "Región Atacama"
+    if lat >= -32: return "Región Coquimbo"
+    if lat >= -33: return "Región Valparaíso"
+    if lat >= -34: return "Región Metropolitana"
+    if lat >= -34.9: return "Región O'Higgins"
+    if lat >= -36: return "Región Maule"
+    if lat >= -36.5: return "Región Ñuble"
+    if lat >= -38: return "Región Biobío"
+    if lat >= -39.5: return "Región La Araucanía"
+    if lat >= -41.5: return "Región Los Ríos"
+    if lat >= -45: return "Región Los Lagos"
+    if lat >= -52: return "Región Aysén"
+    return "Región Magallanes"
+
 def find_col(df, candidates):
     cols_lower = {c.lower(): c for c in df.columns}
     for cand in candidates:
@@ -72,6 +122,24 @@ def load_sismos():
     return df
 
 df = load_sismos()
+
+# Fallback: si aún no hay región, aproximar por latitud
+if 'region_extraida' in df.columns:
+    if col_lat or 'lat_inferida' in df.columns:
+        lat_c = col_lat if col_lat else 'lat_inferida'
+        df['region_calculada'] = df['region_extraida']
+        try:
+            df.loc[df['region_calculada'].isna(), 'region_calculada'] = df.loc[df['region_calculada'].isna(), lat_c].apply(lambda v: region_from_latlon(v, None))
+        except Exception:
+            pass
+else:
+    if col_lat or 'lat_inferida' in df.columns:
+        lat_c = col_lat if col_lat else 'lat_inferida'
+        try:
+            df['region_calculada'] = df[lat_c].apply(lambda v: region_from_latlon(v, None))
+        except Exception:
+            df['region_calculada'] = None
+
 if df.empty:
     st.error("No se pudieron cargar los datos de sismos.")
     st.stop()
