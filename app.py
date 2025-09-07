@@ -13,6 +13,16 @@ from api_utils import fetch_sismos_chile
 st.set_page_config(page_title="Sismos Chile – Magnitud, Profundidad y Mapa", layout="wide")
 st.title("🌎 Sismos en Chile – Magnitud, Profundidad y Mapa")
 
+with st.expander("ℹ️ Acerca de / Requisitos"):
+    st.markdown(
+        "- **Lenguaje**: Python\n"
+        "- **Librerías**: `requests`, `json`, `pandas`, `matplotlib`, `streamlit`, `pydeck`\n"
+        "- **Fuente**: datos públicos vía **API GET** (Chile)\n"
+        "- **Interactividad**: filtros por región, magnitud y fechas; visualizaciones múltiples\n"
+        "- **Entregables**: código + guía de ejecución; la app puede desplegarse en Streamlit Cloud"
+    )
+
+
 # Polished CSS
 st.markdown('''
 <style>
@@ -346,15 +356,109 @@ with k1: st.metric("Total de sismos", f"{len(df):,}")
 with k2: st.metric("Magnitud máx.", f"{df[col_mag].max():.1f}" if col_mag and not df[col_mag].dropna().empty else "N/D")
 with k3: st.metric("Profundidad media", f"{df[col_prof].mean():.1f} km" if col_prof and not df[col_prof].dropna().empty else "N/D")
 
+
 # -----------------------------
-# Histograma
+# Gráficos
 # -----------------------------
-if col_mag and not df[col_mag].dropna().empty:
-    st.subheader("Distribución de magnitudes")
-    fig, ax = plt.subplots()
-    ax.hist(df[col_mag].dropna(), bins=25)
-    ax.set_xlabel("Magnitud"); ax.set_ylabel("Frecuencia"); ax.set_title("Histograma de magnitudes")
-    st.pyplot(fig)
+st.header("📊 Gráficos")
+
+tab_labels = []
+if col_time is not None and pd.api.types.is_datetime64_any_dtype(df[col_time]):
+    tab_labels.append("Serie temporal")
+tab_labels += ["Magnitud vs Profundidad", "Histograma magnitudes"]
+if col_prof is not None:
+    tab_labels.append("Histograma profundidades")
+if "region_calculada" in df.columns or "region_extraida" in df.columns:
+    tab_labels.append("Sismos por región")
+
+tabs = st.tabs(tab_labels if tab_labels else ["Sin datos suficientes para graficar"])
+
+tab_index = 0
+
+# Serie temporal
+if "Serie temporal" in tab_labels:
+    with tabs[tab_index]:
+        st.subheader("Serie temporal de magnitud")
+        if col_time is not None and col_mag is not None:
+            df_ts = df[[col_time, col_mag]].dropna()
+            df_ts = df_ts.sort_values(col_time)
+            # Agrega rolling si hay resolucion temporal suficiente
+            if len(df_ts) >= 5:
+                df_ts["rolling"] = df_ts[col_mag].rolling(window=max(3, len(df_ts)//20), min_periods=1).mean()
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots()
+            ax.plot(df_ts[col_time], df_ts[col_mag], linewidth=1, alpha=.5, label="Magnitud")
+            if "rolling" in df_ts.columns:
+                ax.plot(df_ts[col_time], df_ts["rolling"], linewidth=2, label="Media móvil")
+            ax.set_xlabel("Fecha")
+            ax.set_ylabel("Magnitud")
+            ax.set_title("Magnitudes en el tiempo")
+            ax.legend()
+            st.pyplot(fig)
+        else:
+            st.info("No hay columna de fecha/hora o magnitud para esta gráfica.")
+    tab_index += 1
+
+# Magnitud vs Profundidad
+with tabs[tab_index]:
+    st.subheader("Magnitud vs Profundidad")
+    if col_mag is not None and col_prof is not None:
+        df_sc = df[[col_mag, col_prof]].dropna()
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        ax.scatter(df_sc[col_prof], df_sc[col_mag], s=10, alpha=0.7)
+        ax.set_xlabel("Profundidad (km)")
+        ax.set_ylabel("Magnitud")
+        ax.set_title("Relación Magnitud - Profundidad")
+        st.pyplot(fig)
+    else:
+        st.info("Faltan columnas de magnitud y/o profundidad.")
+tab_index += 1
+
+# Histograma magnitudes
+with tabs[tab_index]:
+    st.subheader("Histograma de magnitudes")
+    if col_mag is not None and not df[col_mag].dropna().empty:
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        ax.hist(df[col_mag].dropna(), bins=25)
+        ax.set_xlabel("Magnitud")
+        ax.set_ylabel("Frecuencia")
+        ax.set_title("Distribución de magnitudes")
+        st.pyplot(fig)
+    else:
+        st.info("No hay datos de magnitud suficientes.")
+tab_index += 1
+
+# Histograma profundidades
+if "Histograma profundidades" in tab_labels:
+    with tabs[tab_index]:
+        st.subheader("Histograma de profundidades")
+        if col_prof is not None and not df[col_prof].dropna().empty:
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots()
+            ax.hist(df[col_prof].dropna(), bins=30)
+            ax.set_xlabel("Profundidad (km)")
+            ax.set_ylabel("Frecuencia")
+            ax.set_title("Distribución de profundidades")
+            st.pyplot(fig)
+        else:
+            st.info("No hay datos de profundidad suficientes.")
+    tab_index += 1
+
+# Sismos por región (barras)
+if "Sismos por región" in tab_labels:
+    with tabs[tab_index]:
+        st.subheader("Sismos por región")
+        reg_col = "region_calculada" if "region_calculada" in df.columns else "region_extraida"
+        ct = df[reg_col].fillna("(sin región)").value_counts().sort_values(ascending=False)
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(8, max(3, len(ct)*0.3)))
+        ax.barh(ct.index, ct.values)
+        ax.set_xlabel("Cantidad de sismos")
+        ax.set_ylabel("Región")
+        ax.set_title("Conteo por región")
+        st.pyplot(fig)
 
 # -----------------------------
 # Mapa (pydeck)

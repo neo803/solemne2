@@ -1,8 +1,1 @@
-requests
-pandas
-matplotlib
-streamlit
-pydeck
-numpy
-folium
-streamlit-folium
+streamlit>=1.32\npandas\nnumpy\npydeck\nmatplotlib\nrequests\n
