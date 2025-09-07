@@ -74,36 +74,51 @@ ANCHORS = {
     # Norte
     "arica": (-18.474, -70.308, "Región Arica y Parinacota"),
     "iquique": (-20.216, -70.142, "Región Tarapacá"),
+    "patache": (-20.79, -70.19, "Región Tarapacá"),
     "antofagasta": (-23.650, -70.400, "Región Antofagasta"),
+    "calama": (-22.456, -68.924, "Región Antofagasta"),
     "copiapo": (-27.366, -70.333, "Región Atacama"),
+    "caldera": (-27.067, -70.817, "Región Atacama"),
     "la serena": (-29.904, -71.248, "Región Coquimbo"),
     "coquimbo": (-29.953, -71.338, "Región Coquimbo"),
+    "ovalle": (-30.603, -71.202, "Región Coquimbo"),
     # Centro
     "valparaiso": (-33.045, -71.620, "Región Valparaíso"),
     "viña del mar": (-33.0246, -71.5518, "Región Valparaíso"),
     "vina del mar": (-33.0246, -71.5518, "Región Valparaíso"),
+    "quintero": (-32.779, -71.528, "Región Valparaíso"),
     "quillota": (-32.880, -71.250, "Región Valparaíso"),
     "san felipe": (-32.750, -70.722, "Región Valparaíso"),
     "los andes": (-32.833, -70.598, "Región Valparaíso"),
+    "petorca": (-32.247, -70.836, "Región Valparaíso"),
     "san antonio": (-33.600, -71.610, "Región Valparaíso"),
     "santiago": (-33.450, -70.660, "Región Metropolitana"),
+    "san jose de maipo": (-33.650, -70.350, "Región Metropolitana"),
     "rancagua": (-34.170, -70.740, "Región O'Higgins"),
+    "san fernando": (-34.585, -70.990, "Región O'Higgins"),
     "curicó": (-34.985, -71.239, "Región Maule"),
     "curico": (-34.985, -71.239, "Región Maule"),
     "talca": (-35.426, -71.655, "Región Maule"),
     "linares": (-35.846, -71.594, "Región Maule"),
     "chillán": (-36.606, -72.103, "Región Ñuble"),
     "chillan": (-36.606, -72.103, "Región Ñuble"),
+    "quillon": (-36.742, -72.471, "Región Ñuble"),
     "los angeles": (-37.470, -72.353, "Región Biobío"),
     "concepción": (-36.827, -73.050, "Región Biobío"),
     "concepcion": (-36.827, -73.050, "Región Biobío"),
     # Sur
     "temuco": (-38.735, -72.590, "Región La Araucanía"),
+    "victoria": (-38.232, -72.333, "Región La Araucanía"),
     "valdivia": (-39.819, -73.245, "Región Los Ríos"),
     "osorno": (-40.574, -73.133, "Región Los Lagos"),
+    "puerto varas": (-41.318, -72.985, "Región Los Lagos"),
     "puerto montt": (-41.469, -72.942, "Región Los Lagos"),
     "coyhaique": (-45.571, -72.068, "Región Aysén"),
     "punta arenas": (-53.163, -70.917, "Región Magallanes"),
+    # Altiplano/cordillera
+    "socaire": (-23.914, -67.878, "Región Antofagasta"),
+    "collahuasi": (-20.996, -68.637, "Región Tarapacá"),
+    "mina collahuasi": (-20.996, -68.637, "Región Tarapacá"),
 }
 
 DIR_BEARINGS = {
@@ -373,7 +388,7 @@ if chosen_region:
 # -----------------------------
 params = {"min_mag": min_mag, "region": chosen_region or "", "text": text_ref or "", "color": color_by, "radius": radius_base}
 try:
-    st.experimental_set_query_params(**params)
+    st.query_params.update(params)
 except Exception:
     pass
 c1, c2 = st.columns([1,1])
