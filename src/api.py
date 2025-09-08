@@ -17,6 +17,7 @@ def _ensure_standard(df: pd.DataFrame) -> pd.DataFrame:
             df[c] = _np.nan
     return df[STANDARD_COLS].sort_values('fecha_dt', ascending=False).reset_index(drop=True)
 
+# Two regex patterns to handle CSN formats
 _pat_slash = re.compile(
     r"(?P<local>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
     r"(?P<lugar>[^\n]+?)\s+(?P<utc>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -25,7 +26,6 @@ _pat_slash = re.compile(
     r"Magnitud\s*(?P<mag>[\d\.]+)\s*[A-Za-z]+",
     re.S
 )
-
 _pat_multiline = re.compile(
     r"(?P<local>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
     r"(?P<lugar>[^\n]+?)\s+(?P<utc>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+"
@@ -67,6 +67,7 @@ def fetch_from_csn(date: _dt.date, timeout: int = 20) -> pd.DataFrame:
     df = _parse_csn_text(text)
     if not df.empty:
         return df
+    # Fallback: try read_html if regex fails
     try:
         tables = pd.read_html(url, flavor='lxml')
         for t in tables:

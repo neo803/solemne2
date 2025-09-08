@@ -9,6 +9,8 @@ import plotly.express as px
 from src.api import fetch_csn_last_days, filter_sismos
 
 st.set_page_config(page_title="Sismos Chile • CSN (solo)", page_icon="🌎", layout="wide")
+st.set_option('client.showErrorDetails', True)
+
 st.title("🌎 Análisis de Sismos en Chile - CSN (solo)")
 st.caption("Fuente única: Catálogo diario del Centro Sismológico Nacional (CSN) — https://www.sismologia.cl/")
 
@@ -20,17 +22,31 @@ with st.sidebar:
     radius = st.slider("Tamaño de marcador (px)", 3, 20, 8)
     color_mode = st.radio("Color por", ["profundidad","magnitud"], index=0)
     mostrar_mapa = st.checkbox("Mostrar mapa", value=True)
+    DEBUG = st.toggle("DEBUG", value=False, help="Muestra detalles de carga y primeras filas")
 
 @st.cache_data(ttl=600, show_spinner=True)
 def load_data(days:int):
     return fetch_csn_last_days(days)
 
+err = None
+df = pd.DataFrame()
 try:
     df = load_data(dias)
 except Exception as e:
-    st.error(f"⚠️ No fue posible cargar datos (CSN): {e}")
-    st.stop()
+    err = e
 
+if DEBUG:
+    st.info("🧪 DEBUG activado")
+    st.write("Dimensiones DF:", df.shape if isinstance(df, pd.DataFrame) else None)
+    if isinstance(df, pd.DataFrame) and not df.empty:
+        st.dataframe(df.head(10))
+    if err:
+        st.exception(err)
+
+if err is not None:
+    st.error(f"⚠️ No fue posible cargar datos (CSN): {err}")
+
+# Garantiza columnas estándar
 for _col in ['latitud','longitud','magnitud','profundidad','fecha_dt','fecha_local','referencia']:
     if _col not in df.columns:
         df[_col] = pd.NA
@@ -40,6 +56,7 @@ desde = hasta - pd.Timedelta(days=int(dias))
 dff = filter_sismos(df, mag_min=mag_sel, fecha_desde=desde, fecha_hasta=hasta, region_keyword=region_kw)
 valid_map = dff.dropna(subset=['latitud','longitud']) if {'latitud','longitud'}.issubset(dff.columns) else dff.iloc[0:0]
 
+# KPIs
 c1,c2,c3,c4 = st.columns(4)
 c1.metric("Eventos", len(dff))
 if not dff.empty:
@@ -49,6 +66,7 @@ if not dff.empty:
 else:
     c2.metric("Magnitud media","—"); c3.metric("Profundidad media (km)","—"); c4.metric("Máx. magnitud","—")
 
+# MAPA
 st.subheader("🗺️ Mapa interactivo (CSN)")
 if not mostrar_mapa:
     st.info("Mapa oculto por el usuario.")
@@ -61,6 +79,7 @@ else:
     if not (np.isfinite(center[0]) and np.isfinite(center[1])):
         center=[-33.45,-70.66]
     m=folium.Map(location=center, zoom_start=4, tiles="OpenStreetMap")
+
     def color_for(r):
         if color_mode=="profundidad":
             v=r['profundidad']
@@ -81,15 +100,17 @@ else:
             f"<b>Fecha:</b> {r.get('fecha_local')}<br>"
             f"<b>Ref:</b> {r.get('referencia','')}"
         )
-        CircleMarker([r['latitud'], r['longitud']],radius=radius,color=color_for(r),fill=True,fill_color=color_for(r),fill_opacity=0.7).add_child(folium.Popup(popup,max_width=350)).add_to(m)
+        CircleMarker([r['latitud'],r['longitud']],radius=radius,color=color_for(r),fill=True,fill_color=color_for(r),fill_opacity=0.7).add_child(folium.Popup(popup,max_width=350)).add_to(m)
     st_folium(m, height=520, use_container_width=True)
 
+# GRÁFICOS
 st.subheader("📈 Tendencias")
 if not dff.empty:
     daily=dff.groupby('dia').agg(eventos=('magnitud','count'), mag_prom=('magnitud','mean')).reset_index()
     st.plotly_chart(px.bar(daily,x='dia',y='eventos',title="Eventos por día (CSN)"), use_container_width=True)
     st.plotly_chart(px.scatter(dff,x='fecha_local',y='magnitud',trendline='lowess',title="Magnitud vs tiempo (CSN)",hover_data=['referencia']), use_container_width=True)
 
+# TABLA
 st.subheader("🧮 Tabla de datos (CSN)")
 st.dataframe(dff[['fecha_local','magnitud','profundidad','latitud','longitud','referencia']])
 st.download_button("⬇️ Descargar CSV filtrado", data=dff.to_csv(index=False).encode("utf-8"), file_name="sismos_csn_filtrados.csv", mime="text/csv")
